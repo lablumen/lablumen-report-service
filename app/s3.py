@@ -1,8 +1,16 @@
 import boto3
+from botocore.config import Config
 
 from .config import settings
 
-_s3 = boto3.client("s3", region_name=settings.aws_region)
+# signature_version='s3v4' is required for pre-signed GET URLs on KMS-encrypted objects.
+# Without it, S3 returns: "InvalidArgument: Requests specifying Server Side Encryption
+# with AWS KMS managed keys require AWS Signature Version 4."
+_s3 = boto3.client(
+    "s3",
+    region_name=settings.aws_region,
+    config=Config(signature_version="s3v4"),
+)
 
 
 def generate_presigned_get_url(object_key: str) -> str:
