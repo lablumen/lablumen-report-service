@@ -5,11 +5,15 @@ Generation: amazon.nova-lite-v1:0 (via the Converse API).
 
 Ingestion (OCR → summary → embed) is handled by the S3-triggered Lambda in
 lablumen-app/serverless/ai-service/. Only the chat-time Bedrock calls live here.
+
+Bedrock is not enabled in the main account — calls go cross-account via STS AssumeRole,
+mirroring the pattern used by the AI Lambda.
 """
 
 from __future__ import annotations
 
 import json
+import os
 from typing import TYPE_CHECKING
 
 import boto3
@@ -19,7 +23,26 @@ from .config import settings
 if TYPE_CHECKING:
     from .schemas import ChatTurn
 
-_client = boto3.client("bedrock-runtime", region_name=settings.aws_region)
+
+def _make_bedrock_client():
+    role_arn = os.environ.get("BEDROCK_CROSS_ACCOUNT_ROLE_ARN")
+    if not role_arn:
+        return boto3.client("bedrock-runtime", region_name=settings.aws_region)
+    sts = boto3.client("sts")
+    creds = sts.assume_role(
+        RoleArn=role_arn,
+        RoleSessionName="lablumen-report-bedrock",
+    )["Credentials"]
+    return boto3.client(
+        "bedrock-runtime",
+        aws_access_key_id=creds["AccessKeyId"],
+        aws_secret_access_key=creds["SecretAccessKey"],
+        aws_session_token=creds["SessionToken"],
+        region_name=settings.aws_region,
+    )
+
+
+_client = _make_bedrock_client()
 
 
 def embed_text(text: str) -> list[float]:
